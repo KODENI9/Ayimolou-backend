@@ -1,0 +1,55 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Fonctions d'aide
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    // --- COLLECTION USERS ---
+    match /users/{userId} {
+      // Un utilisateur peut lire son propre profil
+      // Les clients/vendeurs peuvent lire les profils des autres (ex: voir les infos d'une vendeuse ou d'un livreur)
+      allow read: if isSignedIn();
+      
+      // Seul l'utilisateur peut modifier ses propres infos (depuis le mobile SDK si utilisé)
+      // Note: Le backend (Admin SDK) passe outre ces règles.
+      allow write: if isSignedIn() && isOwner(userId);
+      
+      // Sécurité spécifique pour le driverProfile (si le mobile écrit en direct)
+      // On s'assure qu'un livreur ne peut pas se mettre "Disponible" s'il n'est pas livreur 
+      // Mais ici on privilégie le passage par l'API Backend pour ces contrôles métier.
+    }
+
+    // --- COLLECTION ORDERS ---
+    match /orders/{orderId} {
+      // Lecture autorisée pour les parties prenantes
+      allow read: if isSignedIn() && (
+        resource.data.clientId == request.auth.uid ||
+        resource.data.vendorId == request.auth.uid ||
+        resource.data.driverId == request.auth.uid
+      );
+      
+      // Création/Modification interdite en direct depuis le mobile
+      // Tout DOIT passer par l'API Backend (Express) qui possède les clés Admin
+      allow create, update, delete: if false; 
+    }
+
+    // --- COLLECTION PRODUCTS & CATEGORIES ---
+    match /products/{productId} {
+      allow read: if true; // Public
+      allow write: if false; // Via API uniquement
+    }
+    
+    match /categories/{catId} {
+      allow read: if true; // Public
+      allow write: if false; // Via API uniquement
+    }
+  }
+}
